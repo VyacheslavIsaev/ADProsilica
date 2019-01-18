@@ -79,7 +79,6 @@ public:
     /* Removes the PvAPI callback functions and disconnects the camera */
     static void shutdown(void *arg);
 
- 
 protected:
     int PSReadStatistics;
     #define FIRST_PS_PARAM PSReadStatistics
@@ -119,6 +118,7 @@ protected:
     int PSStrobe1CtlDuration;
     int PSStrobe1Duration;
     #define LAST_PS_PARAM PSStrobe1Duration
+
 private:                                        
     /* These are the methods that are new to this class */
     asynStatus setPixelFormat();
@@ -129,7 +129,11 @@ private:
     asynStatus disconnectCamera();
     asynStatus connectCamera();
     asynStatus syncTimer();
-    
+
+    void setImageParameters(NDArray *pImage, tPvFrame *pFrame);
+    void allocateNewImageBuffer(tPvFrame *pFrame);
+	void setImageTimestamp(tPvFrame* pFrame, NDArray* pImage);
+
     /* These items are specific to the Prosilica driver */
     tPvHandle PvHandle;            /* GenericPointer for the Prosilica PvAPI library */
     char *cameraId;                /* This can be a uniqueID, IP name, or IP address */
@@ -476,19 +480,251 @@ void setImageDimHeight(NDArray *pImage, unsigned char id, tPvFrame *pFrame, int 
     pImage->dims[id].binning = binning;
 }
 
-/** This function gets called in a thread from the PvApi library when a new frame arrives */
-void prosilica::frameCallback(tPvFrame *pFrame)
+void prosilica::setImageParameters(NDArray *pImage, tPvFrame *pFrame)
 {
     int ndims;
     size_t dims[3];
+    int binX, binY;
+    int bayerConvert;
+    epicsInt32 colorMode;
+    NDArray *pTempImage;
+
+    epicsInt32 bayerPattern = pFrame->BayerPattern;
+    getIntegerParam(PSBayerConvert, &bayerConvert);
+    getIntegerParam(ADBinX, &binX);
+    getIntegerParam(ADBinY, &binY);
+
+    switch(pFrame->Format) {
+        case ePvFmtMono8:
+            colorMode = NDColorModeMono;
+            pImage->dataType = NDUInt8;
+            pImage->ndims = 2;
+            setImageDimWidth(pImage,  0, pFrame, binX);
+            setImageDimHeight(pImage, 1, pFrame, binY);
+            break;
+
+        case ePvFmtMono16:
+            colorMode = NDColorModeMono;
+            pImage->dataType = NDUInt16;
+            pImage->ndims = 2;
+            setImageDimWidth(pImage,  0, pFrame, binX);
+            setImageDimHeight(pImage, 1, pFrame, binY);
+            break;
+
+        case ePvFmtBayer8:
+            if (bayerConvert == PSBayerConvertNone) {
+                colorMode = NDColorModeBayer;
+                pImage->dataType = NDUInt8;
+                pImage->ndims = 2;
+                setImageDimWidth(pImage,  0, pFrame, binX);
+                setImageDimHeight(pImage, 1, pFrame, binY);
+            } else {
+                pTempImage = pImage;
+                ndims = 3;
+                dims[0] = 3;
+                dims[1] = pFrame->Width;
+                dims[2] = pFrame->Height;
+                pImage = this->pNDArrayPool->alloc(ndims, dims, NDUInt8, this->maxFrameSize, NULL);
+                epicsUInt8 *pData = (epicsUInt8 *)pImage->pData;
+                switch (bayerConvert) {
+                    case PSBayerConvertRGB1: {
+                        PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
+                        colorMode = NDColorModeRGB1;
+                        pImage->ndims = 3;
+                        setImageDimColor (pImage, 0);
+                        setImageDimWidth (pImage, 1, pFrame, binX);
+                        setImageDimHeight(pImage, 2, pFrame, binY);
+                        break;
+                    }
+
+                    case PSBayerConvertRGB2: {
+                        int rowSize = pFrame->Width;
+                        PvUtilityColorInterpolate(pFrame, pData,  pData+rowSize, pData+2*rowSize,
+                                                  0, (unsigned long)(2*rowSize));
+                        colorMode = NDColorModeRGB2;
+                        pImage->ndims = 3;
+                        setImageDimWidth(pImage,  0, pFrame, binX);
+                        setImageDimColor(pImage,  1);
+                        setImageDimHeight(pImage, 2, pFrame, binY);
+                        break;
+                    }
+
+                    case PSBayerConvertRGB3: {
+                        int imageSize = pFrame->Width * pFrame->Height;
+                        PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
+                        colorMode = NDColorModeRGB3;
+                        pImage->ndims = 3;
+                        setImageDimWidth (pImage, 0, pFrame, binX);
+                        setImageDimHeight(pImage, 1, pFrame, binY);
+                        setImageDimColor (pImage, 2);
+                        break;
+                    }
+                }
+                pTempImage->release();
+            }
+            break;
+
+        case ePvFmtBayer16:
+            if (bayerConvert == PSBayerConvertNone) {
+                colorMode = NDColorModeBayer;
+                pImage->dataType = NDUInt16;
+                pImage->ndims = 2;
+                setImageDimWidth (pImage, 0, pFrame, binX);
+                setImageDimHeight(pImage, 1, pFrame, binY);
+            } else {
+                pTempImage = pImage;
+                ndims = 3;
+                dims[0] = 3;
+                dims[1] = pFrame->Width;
+                dims[2] = pFrame->Height;
+                pImage = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, this->maxFrameSize, NULL);
+                epicsUInt16 *pData = (epicsUInt16 *)pImage->pData;
+
+                switch (bayerConvert) {
+                    case PSBayerConvertRGB1: {
+                        PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
+                        colorMode = NDColorModeRGB1;
+                        pImage->ndims = 3;
+                        setImageDimColor (pImage, 0);
+                        setImageDimWidth (pImage, 1, pFrame, binX);
+                        setImageDimHeight(pImage, 2, pFrame, binY);
+                        break;
+                    }
+
+                    case PSBayerConvertRGB2: {
+                        int rowSize = pFrame->Width;
+                        PvUtilityColorInterpolate(pFrame, pData,  pData+rowSize, pData+2*rowSize,
+                                                  0, (unsigned long)(2*rowSize));
+                        colorMode = NDColorModeRGB2;
+                        pImage->ndims = 3;
+                        setImageDimWidth (pImage, 0, pFrame, binX);
+                        setImageDimColor (pImage, 1);
+                        setImageDimHeight(pImage, 2, pFrame, binY);
+                        break;
+                    }
+
+                    case PSBayerConvertRGB3: {
+                        int imageSize = pFrame->Width * pFrame->Height;
+                        PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
+                        colorMode = NDColorModeRGB3;
+                        pImage->ndims = 3;
+                        setImageDimWidth (pImage, 0, pFrame, binX);
+                        setImageDimHeight(pImage, 1, pFrame, binY);
+                        setImageDimColor (pImage, 2);
+                        break;
+                    }
+                }
+                pTempImage->release();
+            }
+            break;
+
+        case ePvFmtRgb24:
+            colorMode = NDColorModeRGB1;
+            pImage->dataType = NDUInt8;
+            pImage->ndims = 3;
+            setImageDimColor (pImage, 0);
+            setImageDimWidth (pImage, 1, pFrame, binX);
+            setImageDimHeight(pImage, 2, pFrame, binY);
+            break;
+
+        case ePvFmtRgb48:
+            colorMode = NDColorModeRGB1;
+            pImage->dataType = NDUInt16;
+            pImage->ndims = 3;
+            setImageDimColor (pImage, 0);
+            setImageDimWidth (pImage, 1, pFrame, binX);
+            setImageDimHeight(pImage, 2, pFrame, binY);
+            break;
+
+        default:
+             /* We don't support other formats yet */
+            asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR,
+                "%s:%s: error unsupported pixel format %d\n",
+                driverName, __FUNCTION__, pFrame->Format);
+            break;
+    }
+
+    pImage->pAttributeList->add("BayerPattern", "Bayer Pattern", NDAttrInt32, &bayerPattern);
+    pImage->pAttributeList->add("ColorMode", "Color Mode", NDAttrInt32, &colorMode);
+}
+
+void prosilica::setImageTimestamp(tPvFrame* pFrame, NDArray* pImage) {
+	/* Now set timeStamp field in pImage */
+	const double native_frame_ticks = ((double) (pFrame->TimestampLo)
+			+ (double) (pFrame->TimestampHi) * 4294967296.);
+	/* Determine how to set the timeStamp */
+	PSTimestampType_t timestamp_type = PSTimestampTypeNativeTicks;
+	getIntegerParam(PSTimestampType, (int*) (&timestamp_type));
+	switch (timestamp_type) {
+	case PSTimestampTypeNativeTicks:
+		pImage->timeStamp = native_frame_ticks;
+		break;
+	case PSTimestampTypeNativeSeconds:
+		if (this->timeStampFrequency == 0)
+			this->timeStampFrequency = 1;
+
+		pImage->timeStamp = native_frame_ticks / this->timeStampFrequency;
+		break;
+	case PSTimestampTypePOSIX: {
+		if (this->timeStampFrequency == 0)
+			this->timeStampFrequency = 1;
+
+		epicsTimeStamp epics_frame_time = lastSyncTime;
+		epicsTimeAddSeconds(&epics_frame_time,
+				native_frame_ticks / this->timeStampFrequency);
+		timespec ts;
+		epicsTimeToTimespec(&ts, &epics_frame_time);
+		pImage->timeStamp = (double) (ts.tv_sec)
+				+ ((double) (ts.tv_nsec) * 1.0e-9);
+	}
+		break;
+	case PSTimestampTypeEPICS: {
+		if (this->timeStampFrequency == 0)
+			this->timeStampFrequency = 1;
+
+		epicsTimeStamp epics_frame_time = lastSyncTime;
+		epicsTimeAddSeconds(&epics_frame_time,
+				native_frame_ticks / this->timeStampFrequency);
+		pImage->timeStamp = (double) (epics_frame_time.secPastEpoch)
+				+ ((double) (epics_frame_time.nsec) * 1.0e-09);
+	}
+		break;
+	case PSTimestampTypeIOC: {
+		pImage->timeStamp = (double) (pImage->epicsTS.secPastEpoch)
+				+ ((double) (pImage->epicsTS.nsec) * 1.0e-9);
+	}
+		break;
+	default:
+		pImage->timeStamp = native_frame_ticks;
+	}
+}
+
+void prosilica::allocateNewImageBuffer(tPvFrame *pFrame)
+{
+    int ndims;
+    size_t dims[3];
+
+	/* Allocate a new image buffer, make the size be the maximum that the frames can be */
+	ndims = 2;
+	dims[0] = this->sensorWidth;
+	dims[1] = this->sensorHeight;
+	NDArray *pImage = this->pNDArrayPool->alloc(ndims, dims, NDInt8, this->maxFrameSize, NULL);
+
+	/* Put the pointer to this image buffer in the frame context[1] */
+	pFrame->Context[1] = pImage;
+
+	/* Reset the frame buffer data pointer be this image buffer data pointer */
+	pFrame->ImageBuffer = pImage->pData;
+}
+
+
+/** This function gets called in a thread from the PvApi library when a new frame arrives */
+void prosilica::frameCallback(tPvFrame *pFrame)
+{
     int imageCounter;
     int arrayCallbacks;
     NDArray *pImage;
-    NDArray *pTempImage;
-    int binX, binY;
     int badFrameCounter;
-    int bayerConvert;
-    epicsInt32 bayerPattern, colorMode;
     static const char *functionName = "frameCallback";
 
     /* If this callback is coming from a shutdown operation rather than normal collection, 
@@ -515,214 +751,14 @@ void prosilica::frameCallback(tPvFrame *pFrame)
         pImage->uniqueId = pFrame->FrameCount;
         updateTimeStamp(&pImage->epicsTS);
 
-        getIntegerParam(ADBinX, &binX);
-        getIntegerParam(ADBinY, &binY);
-
         /* The mono cameras can return a Bayer pattern which is invalid, and this can
          * crash the file plugin.  Fix it here. */
         if (pFrame->BayerPattern > ePvBayerBGGR) pFrame->BayerPattern = ePvBayerRGGB;
-        bayerPattern = pFrame->BayerPattern;
-        getIntegerParam(PSBayerConvert, &bayerConvert);
 
-        switch(pFrame->Format) {
-            case ePvFmtMono8:
-                colorMode = NDColorModeMono;
-                pImage->dataType = NDUInt8;
-                pImage->ndims = 2;
-                setImageDimWidth(pImage,  0, pFrame, binX);
-                setImageDimHeight(pImage, 1, pFrame, binY);
-                break;
-
-            case ePvFmtMono16:
-                colorMode = NDColorModeMono;
-                pImage->dataType = NDUInt16;
-                pImage->ndims = 2;
-                setImageDimWidth(pImage,  0, pFrame, binX);
-                setImageDimHeight(pImage, 1, pFrame, binY);
-                break;
-
-            case ePvFmtBayer8:
-                if (bayerConvert == PSBayerConvertNone) {
-                    colorMode = NDColorModeBayer;
-                    pImage->dataType = NDUInt8;
-                    pImage->ndims = 2;
-                    setImageDimWidth(pImage,  0, pFrame, binX);
-                    setImageDimHeight(pImage, 1, pFrame, binY);
-                } else {
-                    pTempImage = pImage;
-                    ndims = 3;
-                    dims[0] = 3;
-                    dims[1] = pFrame->Width;
-                    dims[2] = pFrame->Height;
-                    pImage = this->pNDArrayPool->alloc(ndims, dims, NDUInt8, this->maxFrameSize, NULL);
-                    epicsUInt8 *pData = (epicsUInt8 *)pImage->pData;
-                    switch (bayerConvert) {
-                        case PSBayerConvertRGB1: {
-                            PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
-                            colorMode = NDColorModeRGB1;
-                            pImage->ndims = 3;
-                            setImageDimColor (pImage, 0);
-                            setImageDimWidth (pImage, 1, pFrame, binX);
-                            setImageDimHeight(pImage, 2, pFrame, binY);
-                            break;
-                        }
-
-                        case PSBayerConvertRGB2: {
-                            int rowSize = pFrame->Width;
-                            PvUtilityColorInterpolate(pFrame, pData,  pData+rowSize, pData+2*rowSize, 
-                                                      0, (unsigned long)(2*rowSize));
-                            colorMode = NDColorModeRGB2;
-                            pImage->ndims = 3;
-                            setImageDimWidth(pImage,  0, pFrame, binX);
-                            setImageDimColor(pImage,  1);
-                            setImageDimHeight(pImage, 2, pFrame, binY);
-                            break;
-                        }
-
-                        case PSBayerConvertRGB3: {
-                            int imageSize = pFrame->Width * pFrame->Height;
-                            PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
-                            colorMode = NDColorModeRGB3;
-                            pImage->ndims = 3;
-                            setImageDimWidth (pImage, 0, pFrame, binX);
-                            setImageDimHeight(pImage, 1, pFrame, binY);
-                            setImageDimColor (pImage, 2);
-                            break;
-                        }
-                    }
-                    pTempImage->release();
-                }
-                break;
-
-            case ePvFmtBayer16:
-                if (bayerConvert == PSBayerConvertNone) {
-                    colorMode = NDColorModeBayer;
-                    pImage->dataType = NDUInt16;
-                    pImage->ndims = 2;
-                    setImageDimWidth (pImage, 0, pFrame, binX);
-                    setImageDimHeight(pImage, 1, pFrame, binY);
-                } else {
-                    pTempImage = pImage;
-                    ndims = 3;
-                    dims[0] = 3;
-                    dims[1] = pFrame->Width;
-                    dims[2] = pFrame->Height;
-                    pImage = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, this->maxFrameSize, NULL);
-                    epicsUInt16 *pData = (epicsUInt16 *)pImage->pData;
-
-                    switch (bayerConvert) {
-                        case PSBayerConvertRGB1: {
-                            PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
-                            colorMode = NDColorModeRGB1;
-                            pImage->ndims = 3;
-                            setImageDimColor (pImage, 0);
-                            setImageDimWidth (pImage, 1, pFrame, binX);
-                            setImageDimHeight(pImage, 2, pFrame, binY);
-                            break;
-                        }
-
-                        case PSBayerConvertRGB2: {
-                            int rowSize = pFrame->Width;
-                            PvUtilityColorInterpolate(pFrame, pData,  pData+rowSize, pData+2*rowSize, 
-                                                      0, (unsigned long)(2*rowSize));
-                            colorMode = NDColorModeRGB2;
-                            pImage->ndims = 3;
-                            setImageDimWidth (pImage, 0, pFrame, binX);
-                            setImageDimColor (pImage, 1);
-                            setImageDimHeight(pImage, 2, pFrame, binY);
-                            break;
-                        }
-
-                        case PSBayerConvertRGB3: {
-                            int imageSize = pFrame->Width * pFrame->Height;
-                            PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
-                            colorMode = NDColorModeRGB3;
-                            pImage->ndims = 3;
-                            setImageDimWidth (pImage, 0, pFrame, binX);
-                            setImageDimHeight(pImage, 1, pFrame, binY);
-                            setImageDimColor (pImage, 2);
-                            break;
-                        }
-                    }
-                    pTempImage->release();
-                }
-                break;
-
-            case ePvFmtRgb24:
-                colorMode = NDColorModeRGB1;
-                pImage->dataType = NDUInt8;
-                pImage->ndims = 3;
-                setImageDimColor (pImage, 0);
-                setImageDimWidth (pImage, 1, pFrame, binX);
-                setImageDimHeight(pImage, 2, pFrame, binY);
-                break;
-
-            case ePvFmtRgb48:
-                colorMode = NDColorModeRGB1;
-                pImage->dataType = NDUInt16;
-                pImage->ndims = 3;
-                setImageDimColor (pImage, 0);
-                setImageDimWidth (pImage, 1, pFrame, binX);
-                setImageDimHeight(pImage, 2, pFrame, binY);
-                break;
-
-            default:
-                 /* We don't support other formats yet */
-                asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR, 
-                    "%s:%s: error unsupported pixel format %d\n", 
-                    driverName, functionName, pFrame->Format);
-                break;
-        }
-        pImage->pAttributeList->add("BayerPattern", "Bayer Pattern", NDAttrInt32, &bayerPattern);
-        pImage->pAttributeList->add("ColorMode", "Color Mode", NDAttrInt32, &colorMode);
+        setImageParameters(pImage, pFrame);
         
         /* Now set timeStamp field in pImage */
-        const double native_frame_ticks =  ((double)pFrame->TimestampLo + (double)pFrame->TimestampHi*4294967296.);
-
-        /* Determine how to set the timeStamp */
-        PSTimestampType_t timestamp_type = PSTimestampTypeNativeTicks;
-        getIntegerParam(PSTimestampType, (int*)&timestamp_type);
-
-        switch (timestamp_type) {
-            case PSTimestampTypeNativeTicks:
-                pImage->timeStamp = native_frame_ticks;
-                break;
-
-            case PSTimestampTypeNativeSeconds:
-                if (this->timeStampFrequency == 0) this->timeStampFrequency = 1;
-                pImage->timeStamp = native_frame_ticks / this->timeStampFrequency;
-                break;
-
-            case PSTimestampTypePOSIX: {
-                    if (this->timeStampFrequency == 0) this->timeStampFrequency = 1;
-                    epicsTimeStamp epics_frame_time = lastSyncTime;
-                    epicsTimeAddSeconds(&epics_frame_time, 
-                        native_frame_ticks/this->timeStampFrequency);
-                    timespec ts;
-                    epicsTimeToTimespec(&ts, &epics_frame_time);
-                    pImage->timeStamp = (double)ts.tv_sec + ((double)ts.tv_nsec * 1.0e-9);
-                }
-                break;
-
-            case PSTimestampTypeEPICS: {
-                    if (this->timeStampFrequency == 0) this->timeStampFrequency = 1;
-                    epicsTimeStamp epics_frame_time = lastSyncTime;
-                    epicsTimeAddSeconds(&epics_frame_time, 
-                        native_frame_ticks/this->timeStampFrequency);
-                    pImage->timeStamp = (double)epics_frame_time.secPastEpoch + 
-                      ((double)epics_frame_time.nsec * 1.0e-09);
-                }
-                break;
-
-            case PSTimestampTypeIOC: {
-                    pImage->timeStamp = (double)pImage->epicsTS.secPastEpoch 
-                      + ((double)pImage->epicsTS.nsec * 1.0e-9);
-                }
-                break;
-
-            default:
-                pImage->timeStamp = native_frame_ticks;
-        }
+		setImageTimestamp(pFrame, pImage);
 
         /* Get any attributes that have been defined for this driver */        
         this->getAttributes(pImage->pAttributeList);
@@ -756,15 +792,8 @@ void prosilica::frameCallback(tPvFrame *pFrame)
         if (this->pArrays[0]) this->pArrays[0]->release();
         this->pArrays[0] = pImage;
 
-        /* Allocate a new image buffer, make the size be the maximum that the frames can be */
-        ndims = 2;
-        dims[0] = this->sensorWidth;
-        dims[1] = this->sensorHeight;
-        pImage = this->pNDArrayPool->alloc(ndims, dims, NDInt8, this->maxFrameSize, NULL);
-        /* Put the pointer to this image buffer in the frame context[1] */
-        pFrame->Context[1] = pImage;
-        /* Reset the frame buffer data pointer be this image buffer data pointer */
-        pFrame->ImageBuffer = pImage->pData;
+        allocateNewImageBuffer(pFrame);
+
     } else {
         asynPrint(this->pasynUserSelf, ASYN_TRACE_FLOW, 
             "%s:%s: ERROR, frame has error code %d\n",
@@ -1371,6 +1400,7 @@ asynStatus prosilica::connectCamera()
     bytesPerPixel = (this->sensorBits-1)/8 + 1;
     /* If the camera supports color then there can be 3 values per pixel */
     if (strcmp(this->sensorType, "Mono") != 0) bytesPerPixel *= 3;
+
     this->maxFrameSize = this->sensorWidth * this->sensorHeight * bytesPerPixel;    
     for (i=0; i<maxPvAPIFrames_; i++) {
         pFrame = &this->PvFrames[i];
@@ -1524,7 +1554,7 @@ asynStatus prosilica::writeInt32(asynUser *pasynUser, epicsInt32 value)
         if ((value < 0) || (value > (NUM_TRIGGER_START_MODES-1))) {
             status = asynError;
         } else {
-            status |= PvAttrEnumSet(this->PvHandle, "FrameStartTriggerMode", 
+            status |= PvAttrEnumSet(this->PvHandle, "FrameStartTriggerMode",
                                     PSTriggerStartModes[value]);
         }
     } else if (function == PSByteRate) {
