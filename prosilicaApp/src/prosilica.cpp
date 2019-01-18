@@ -448,6 +448,34 @@ asynStatus prosilica::syncTimer() {
 }
 
 
+void setImageDimmention(NDArray *pImage, unsigned char id, size_t size, size_t  offset, int binning)
+{
+	pImage->dims[id].size    = size;
+	pImage->dims[id].offset  = offset;
+	pImage->dims[id].binning = binning;
+}
+
+void setImageDimColor(NDArray *pImage, unsigned char id, int binning=1)
+{
+	pImage->dims[id].size    = 3;
+	pImage->dims[id].offset  = 0;
+	pImage->dims[id].binning = binning;
+}
+
+void setImageDimWidth(NDArray *pImage, unsigned char id, tPvFrame *pFrame, int binning)
+{
+    pImage->dims[id].size    = pFrame->Width;
+    pImage->dims[id].offset  = pFrame->RegionX;
+    pImage->dims[id].binning = binning;
+}
+
+void setImageDimHeight(NDArray *pImage, unsigned char id, tPvFrame *pFrame, int binning)
+{
+    pImage->dims[id].size    = pFrame->Height;
+    pImage->dims[id].offset  = pFrame->RegionY;
+    pImage->dims[id].binning = binning;
+}
+
 /** This function gets called in a thread from the PvApi library when a new frame arrives */
 void prosilica::frameCallback(tPvFrame *pFrame)
 {
@@ -501,24 +529,16 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                 colorMode = NDColorModeMono;
                 pImage->dataType = NDUInt8;
                 pImage->ndims = 2;
-                pImage->dims[0].size    = pFrame->Width;
-                pImage->dims[0].offset  = pFrame->RegionX;
-                pImage->dims[0].binning = binX;
-                pImage->dims[1].size    = pFrame->Height;
-                pImage->dims[1].offset  = pFrame->RegionY;
-                pImage->dims[1].binning = binY;
+                setImageDimWidth(pImage,  0, pFrame, binX);
+                setImageDimHeight(pImage, 1, pFrame, binY);
                 break;
 
             case ePvFmtMono16:
                 colorMode = NDColorModeMono;
                 pImage->dataType = NDUInt16;
                 pImage->ndims = 2;
-                pImage->dims[0].size    = pFrame->Width;
-                pImage->dims[0].offset  = pFrame->RegionX;
-                pImage->dims[0].binning = binX;
-                pImage->dims[1].size    = pFrame->Height;
-                pImage->dims[1].offset  = pFrame->RegionY;
-                pImage->dims[1].binning = binY;
+                setImageDimWidth(pImage,  0, pFrame, binX);
+                setImageDimHeight(pImage, 1, pFrame, binY);
                 break;
 
             case ePvFmtBayer8:
@@ -526,12 +546,8 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                     colorMode = NDColorModeBayer;
                     pImage->dataType = NDUInt8;
                     pImage->ndims = 2;
-                    pImage->dims[0].size   = pFrame->Width;
-                    pImage->dims[0].offset = pFrame->RegionX;
-                    pImage->dims[0].binning = binX;
-                    pImage->dims[1].size   = pFrame->Height;
-                    pImage->dims[1].offset = pFrame->RegionY;
-                    pImage->dims[1].binning = binY;
+                    setImageDimWidth(pImage,  0, pFrame, binX);
+                    setImageDimHeight(pImage, 1, pFrame, binY);
                 } else {
                     pTempImage = pImage;
                     ndims = 3;
@@ -545,15 +561,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                             PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
                             colorMode = NDColorModeRGB1;
                             pImage->ndims = 3;
-                            pImage->dims[0].size    = 3;
-                            pImage->dims[0].offset  = 0;
-                            pImage->dims[0].binning = 1;
-                            pImage->dims[1].size   = pFrame->Width;
-                            pImage->dims[1].offset = pFrame->RegionX;
-                            pImage->dims[1].binning = binX;
-                            pImage->dims[2].size   = pFrame->Height;
-                            pImage->dims[2].offset = pFrame->RegionY;
-                            pImage->dims[2].binning = binY;
+                            setImageDimColor (pImage, 0);
+                            setImageDimWidth (pImage, 1, pFrame, binX);
+                            setImageDimHeight(pImage, 2, pFrame, binY);
                             break;
                         }
 
@@ -563,15 +573,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                                                       0, (unsigned long)(2*rowSize));
                             colorMode = NDColorModeRGB2;
                             pImage->ndims = 3;
-                            pImage->dims[0].size   = pFrame->Width;
-                            pImage->dims[0].offset = pFrame->RegionX;
-                            pImage->dims[0].binning = binX;
-                            pImage->dims[1].size    = 3;
-                            pImage->dims[1].offset  = 0;
-                            pImage->dims[1].binning = 1;
-                            pImage->dims[2].size   = pFrame->Height;
-                            pImage->dims[2].offset = pFrame->RegionY;
-                            pImage->dims[2].binning = binY;
+                            setImageDimWidth(pImage,  0, pFrame, binX);
+                            setImageDimColor(pImage,  1);
+                            setImageDimHeight(pImage, 2, pFrame, binY);
                             break;
                         }
 
@@ -580,15 +584,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                             PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
                             colorMode = NDColorModeRGB3;
                             pImage->ndims = 3;
-                            pImage->dims[0].size   = pFrame->Width;
-                            pImage->dims[0].offset = pFrame->RegionX;
-                            pImage->dims[0].binning = binX;
-                            pImage->dims[1].size   = pFrame->Height;
-                            pImage->dims[1].offset = pFrame->RegionY;
-                            pImage->dims[1].binning = binY;
-                            pImage->dims[2].size    = 3;
-                            pImage->dims[2].offset  = 0;
-                            pImage->dims[2].binning = 1;
+                            setImageDimWidth (pImage, 0, pFrame, binX);
+                            setImageDimHeight(pImage, 1, pFrame, binY);
+                            setImageDimColor (pImage, 2);
                             break;
                         }
                     }
@@ -601,12 +599,8 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                     colorMode = NDColorModeBayer;
                     pImage->dataType = NDUInt16;
                     pImage->ndims = 2;
-                    pImage->dims[0].size    = pFrame->Width;
-                    pImage->dims[0].offset  = pFrame->RegionX;
-                    pImage->dims[0].binning = binX;
-                    pImage->dims[1].size    = pFrame->Height;
-                    pImage->dims[1].offset  = pFrame->RegionY;
-                    pImage->dims[1].binning = binY;
+                    setImageDimWidth (pImage, 0, pFrame, binX);
+                    setImageDimHeight(pImage, 1, pFrame, binY);
                 } else {
                     pTempImage = pImage;
                     ndims = 3;
@@ -621,15 +615,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                             PvUtilityColorInterpolate(pFrame, pData, pData+1, pData+2, 2, 0);
                             colorMode = NDColorModeRGB1;
                             pImage->ndims = 3;
-                            pImage->dims[0].size    = 3;
-                            pImage->dims[0].offset  = 0;
-                            pImage->dims[0].binning = 1;
-                            pImage->dims[1].size   = pFrame->Width;
-                            pImage->dims[1].offset = pFrame->RegionX;
-                            pImage->dims[1].binning = binX;
-                            pImage->dims[2].size   = pFrame->Height;
-                            pImage->dims[2].offset = pFrame->RegionY;
-                            pImage->dims[2].binning = binY;
+                            setImageDimColor (pImage, 0);
+                            setImageDimWidth (pImage, 1, pFrame, binX);
+                            setImageDimHeight(pImage, 2, pFrame, binY);
                             break;
                         }
 
@@ -639,15 +627,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                                                       0, (unsigned long)(2*rowSize));
                             colorMode = NDColorModeRGB2;
                             pImage->ndims = 3;
-                            pImage->dims[0].size   = pFrame->Width;
-                            pImage->dims[0].offset = pFrame->RegionX;
-                            pImage->dims[0].binning = binX;
-                            pImage->dims[1].size    = 3;
-                            pImage->dims[1].offset  = 0;
-                            pImage->dims[1].binning = 1;
-                            pImage->dims[2].size   = pFrame->Height;
-                            pImage->dims[2].offset = pFrame->RegionY;
-                            pImage->dims[2].binning = binY;
+                            setImageDimWidth (pImage, 0, pFrame, binX);
+                            setImageDimColor (pImage, 1);
+                            setImageDimHeight(pImage, 2, pFrame, binY);
                             break;
                         }
 
@@ -656,15 +638,9 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                             PvUtilityColorInterpolate(pFrame, pData,  pData+imageSize, pData+2*imageSize, 0, 0);
                             colorMode = NDColorModeRGB3;
                             pImage->ndims = 3;
-                            pImage->dims[0].size   = pFrame->Width;
-                            pImage->dims[0].offset = pFrame->RegionX;
-                            pImage->dims[0].binning = binX;
-                            pImage->dims[1].size   = pFrame->Height;
-                            pImage->dims[1].offset = pFrame->RegionY;
-                            pImage->dims[1].binning = binY;
-                            pImage->dims[2].size    = 3;
-                            pImage->dims[2].offset  = 0;
-                            pImage->dims[2].binning = 1;
+                            setImageDimWidth (pImage, 0, pFrame, binX);
+                            setImageDimHeight(pImage, 1, pFrame, binY);
+                            setImageDimColor (pImage, 2);
                             break;
                         }
                     }
@@ -676,30 +652,18 @@ void prosilica::frameCallback(tPvFrame *pFrame)
                 colorMode = NDColorModeRGB1;
                 pImage->dataType = NDUInt8;
                 pImage->ndims = 3;
-                pImage->dims[0].size    = 3;
-                pImage->dims[0].offset  = 0;
-                pImage->dims[0].binning = 1;
-                pImage->dims[1].size    = pFrame->Width;
-                pImage->dims[1].offset  = pFrame->RegionX;
-                pImage->dims[1].binning = binX;
-                pImage->dims[2].size    = pFrame->Height;
-                pImage->dims[2].offset  = pFrame->RegionY;
-                pImage->dims[2].binning = binY;
+                setImageDimColor (pImage, 0);
+                setImageDimWidth (pImage, 1, pFrame, binX);
+                setImageDimHeight(pImage, 2, pFrame, binY);
                 break;
 
             case ePvFmtRgb48:
                 colorMode = NDColorModeRGB1;
                 pImage->dataType = NDUInt16;
                 pImage->ndims = 3;
-                pImage->dims[0].size    = 3;
-                pImage->dims[0].offset  = 0;
-                pImage->dims[0].binning = 1;
-                pImage->dims[1].size    = pFrame->Width;
-                pImage->dims[1].offset  = pFrame->RegionX;
-                pImage->dims[1].binning = binX;
-                pImage->dims[2].size    = pFrame->Height;
-                pImage->dims[2].offset  = pFrame->RegionY;
-                pImage->dims[2].binning = binY;
+                setImageDimColor (pImage, 0);
+                setImageDimWidth (pImage, 1, pFrame, binX);
+                setImageDimHeight(pImage, 2, pFrame, binY);
                 break;
 
             default:
@@ -823,16 +787,17 @@ asynStatus prosilica::setPixelFormat()
     int status = asynSuccess;
     int colorMode, dataType;
     static const char *functionName = "setPixelFormat";
-    char pixelFormat[20];
+    const char pFmtStrSize=20;
+    char pixelFormat[pFmtStrSize];
 
     status |= getIntegerParam(NDColorMode, &colorMode);
     status |= getIntegerParam(NDDataType, &dataType);
-    if      ((colorMode == NDColorModeMono)  && (dataType == NDUInt8))  strcpy(pixelFormat, "Mono8");
-    else if ((colorMode == NDColorModeMono)  && (dataType == NDUInt16)) strcpy(pixelFormat, "Mono16");
-    else if ((colorMode == NDColorModeRGB1)  && (dataType == NDUInt8))  strcpy(pixelFormat, "Rgb24");
-    else if ((colorMode == NDColorModeRGB1)  && (dataType == NDUInt16)) strcpy(pixelFormat, "Rgb48");
-    else if ((colorMode == NDColorModeBayer) && (dataType == NDUInt8))  strcpy(pixelFormat, "Bayer8");
-    else if ((colorMode == NDColorModeBayer) && (dataType == NDUInt16)) strcpy(pixelFormat, "Bayer16");
+    if      ((colorMode == NDColorModeMono)  && (dataType == NDUInt8))  strncpy(pixelFormat, "Mono8", pFmtStrSize);
+    else if ((colorMode == NDColorModeMono)  && (dataType == NDUInt16)) strncpy(pixelFormat, "Mono16", pFmtStrSize);
+    else if ((colorMode == NDColorModeRGB1)  && (dataType == NDUInt8))  strncpy(pixelFormat, "Rgb24", pFmtStrSize);
+    else if ((colorMode == NDColorModeRGB1)  && (dataType == NDUInt16)) strncpy(pixelFormat, "Rgb48", pFmtStrSize);
+    else if ((colorMode == NDColorModeBayer) && (dataType == NDUInt8))  strncpy(pixelFormat, "Bayer8", pFmtStrSize);
+    else if ((colorMode == NDColorModeBayer) && (dataType == NDUInt16)) strncpy(pixelFormat, "Bayer16", pFmtStrSize);
     else {
          /* We don't support other formats yet */
         asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR, 
@@ -925,26 +890,38 @@ asynStatus prosilica::getGeometry()
     return((asynStatus)status);
 }
 
+
+void checkOffOn(const char *buffer, int &i, int &status)
+{
+	if (strcmp(buffer, "Off") == 0) i = 0;
+	else if (strcmp(buffer, "On") == 0) i = 1;
+	else {
+		i=0;
+		status |= asynError;
+	}
+}
+
 asynStatus prosilica::readStats()
 {
     int status = asynSuccess;
-    char buffer[50];
+    const char buffSize=50;
+    char buffer[buffSize];
     unsigned long nchars;
     tPvUint32 uval;
     int i;
     float fval;
     static const char *functionName = "readStats";
     
-    status |= PvAttrEnumGet      (this->PvHandle, "StatDriverType", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet      (this->PvHandle, "StatDriverType", buffer, buffSize, &nchars);
     if (status == ePvErrNotFound) {
         status = 0;
-        strcpy(buffer, "Unsupported parameter");
+        strncpy(buffer, "Unsupported parameter", buffSize);
     }
     status |= setStringParam (PSDriverType, buffer);    
-    status |= PvAttrStringGet    (this->PvHandle, "StatFilterVersion", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrStringGet    (this->PvHandle, "StatFilterVersion", buffer, buffSize, &nchars);
     if (status == ePvErrNotFound) {
         status = 0;
-        strcpy(buffer, "Unsupported parameter");
+        strncpy(buffer, "Unsupported parameter", buffSize);
     }
     status |= setStringParam (PSFilterVersion, buffer);
     status |= PvAttrFloat32Get   (this->PvHandle, "StatFrameRate", &fval);
@@ -976,7 +953,7 @@ asynStatus prosilica::readStats()
     status |= setIntegerParam(PSSyncOut3Level, uval&0x04 ? 1:0);
     status |= PvAttrUint32Get    (this->PvHandle, "FrameStartTriggerDelay", &uval);
     status |= setDoubleParam(PSTriggerDelay, uval/1.e6);
-    status |= PvAttrEnumGet(this->PvHandle, "FrameStartTriggerEvent", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "FrameStartTriggerEvent", buffer, buffSize, &nchars);
     for (i=0; i<NUM_TRIGGER_EVENT_MODES; i++) {
         if (strcmp(buffer, PSTriggerEventModes[i]) == 0) {
             status |= setIntegerParam(PSTriggerEvent, i);
@@ -987,7 +964,7 @@ asynStatus prosilica::readStats()
         status |= setIntegerParam(PSTriggerEvent, 0);
         status |= asynError;
     }    
-    status |= PvAttrEnumGet(this->PvHandle, "FrameStartTriggerOverlap", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "FrameStartTriggerOverlap", buffer, buffSize, &nchars);
     /* This parameter can be not supported */
     if (status == ePvErrNotFound) {
         status = 0;
@@ -1004,7 +981,7 @@ asynStatus prosilica::readStats()
             status |= asynError;
         }
     }
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut1Mode", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut1Mode", buffer, buffSize, &nchars);
     for (i=0; i<NUM_SYNC_OUT_MODES; i++) {
         if (strcmp(buffer, PSSyncOutModes[i]) == 0) {
             status |= setIntegerParam(PSSyncOut1Mode, i);
@@ -1015,7 +992,7 @@ asynStatus prosilica::readStats()
         status |= setIntegerParam(PSSyncOut1Mode, 0);
         status |= asynError;
     }
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut2Mode", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut2Mode", buffer, buffSize, &nchars);
     for (i=0; i<NUM_SYNC_OUT_MODES; i++) {
         if (strcmp(buffer, PSSyncOutModes[i]) == 0) {
             status |= setIntegerParam(PSSyncOut2Mode, i);
@@ -1026,7 +1003,7 @@ asynStatus prosilica::readStats()
         status |= setIntegerParam(PSSyncOut2Mode, 0);
         status |= asynError;
     }
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut3Mode", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut3Mode", buffer, buffSize, &nchars);
     /* This parameter can be not supported */
     if (status == ePvErrNotFound) {
         status = 0;
@@ -1044,37 +1021,24 @@ asynStatus prosilica::readStats()
         }
     }
     
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut1Invert", buffer, sizeof(buffer), &nchars);
-    if (strcmp(buffer, "Off") == 0) i = 0;
-    else if (strcmp(buffer, "On") == 0) i = 1;
-    else {
-        i=0;
-        status |= asynError;
-    }
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut1Invert", buffer, buffSize, &nchars);
+    checkOffOn(buffer, i, status);
     status |= setIntegerParam(PSSyncOut1Invert, i);
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut2Invert", buffer, sizeof(buffer), &nchars);
-    if (strcmp(buffer, "Off") == 0) i = 0;
-    else if (strcmp(buffer, "On") == 0) i = 1;
-    else {
-        i=0;
-        status |= asynError;
-    }
+
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut2Invert", buffer, buffSize, &nchars);
+    checkOffOn(buffer, i, status);
     status |= setIntegerParam(PSSyncOut2Invert, i);
-    status |= PvAttrEnumGet(this->PvHandle, "SyncOut3Invert", buffer, sizeof(buffer), &nchars);
+
+    status |= PvAttrEnumGet(this->PvHandle, "SyncOut3Invert", buffer, buffSize, &nchars);
     if (status == ePvErrNotFound) {
         status = 0;
         i=0;
     } else {
-        if (strcmp(buffer, "Off") == 0) i = 0;
-        else if (strcmp(buffer, "On") == 0) i = 1;
-        else {
-            i=0;
-            status |= asynError;
-        }
+        checkOffOn(buffer, i, status);
     }
     status |= setIntegerParam(PSSyncOut3Invert, i);
 
-    status |= PvAttrEnumGet(this->PvHandle, "Strobe1Mode", buffer, sizeof(buffer), &nchars);
+    status |= PvAttrEnumGet(this->PvHandle, "Strobe1Mode", buffer, buffSize, &nchars);
     for (i=0; i<NUM_STROBE_MODES; i++) {
         if (strcmp(buffer, PSStrobeModes[i]) == 0) {
             status |= setIntegerParam(PSStrobe1Mode, i);
@@ -1085,17 +1049,13 @@ asynStatus prosilica::readStats()
         status |= setIntegerParam(PSStrobe1Mode, 0);
         status |= asynError;
     }
-    status |= PvAttrEnumGet(this->PvHandle, "Strobe1ControlledDuration", buffer, sizeof(buffer), &nchars);
-    if (strcmp(buffer, "Off") == 0) i = 0;
-    else if (strcmp(buffer, "On") == 0) i = 1;
-    else {
-        i=0;
-        status |= asynError;
-    }
+    status |= PvAttrEnumGet(this->PvHandle, "Strobe1ControlledDuration", buffer, buffSize, &nchars);
+    checkOffOn(buffer, i, status);
     status |= setIntegerParam(PSStrobe1CtlDuration, i);
 
     status |= PvAttrUint32Get    (this->PvHandle, "Strobe1Delay", &uval);
     status |= setDoubleParam(PSStrobe1Delay, uval/1.e6);
+
     status |= PvAttrUint32Get    (this->PvHandle, "Strobe1Duration", &uval);
     status |= setDoubleParam(PSStrobe1Duration, uval/1.e6);
 
@@ -1495,7 +1455,6 @@ asynStatus prosilica::connectCamera()
     return asynSuccess;
 }
 
-
 /** Called when asyn clients call pasynInt32->write().
   * This function performs actions for some parameters, including ADAcquire, ADBinX, etc.
   * For all parameters it sets the value in the parameter library and calls any registered callbacks..
